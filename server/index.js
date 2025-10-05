@@ -294,5 +294,6 @@ app.get('*', (req, res) => {
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Stranger Chat server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Open http://localhost:${PORT} in your browser`);
 });
