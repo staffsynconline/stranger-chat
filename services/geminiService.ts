@@ -144,12 +144,22 @@ export const endChatSession = (): void => {
 let peerConnection: RTCPeerConnection | null = null;
 let localStream: MediaStream | null = null;
 
-// WebRTC configuration
+// WebRTC configuration - enhanced for production
 const rtcConfig = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' }
-  ]
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    // TURN servers for production firewalls
+    {
+      urls: 'turn:numb.viagenie.ca',
+      credential: 'muazkh',
+      username: 'webrtc@live.com'
+    }
+  ],
+  iceCandidatePoolSize: 10
 };
 
 // Start live session with WebRTC
