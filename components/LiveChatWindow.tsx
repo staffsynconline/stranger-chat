@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChatMode, Message, MessageSender } from '../types';
-import { streamAudio, streamImage, sendMessageToAI } from '../services/geminiService';
-import { decode, decodeAudioData } from '../utils/audioUtils';
-import { blobToBase64 } from '../utils/imageUtils';
+import { sendMessageToPartner } from '../services/geminiService';
 import StrangerVisualizer from './StrangerVisualizer';
 import MessageBubble from './MessageBubble';
 import ThemeToggleButton from './ThemeToggleButton';
@@ -15,6 +13,7 @@ interface LiveChatWindowProps {
   chatMode: ChatMode;
   onSkip: () => void;
   onStop: () => void;
+  messages?: Message[];
 }
 
 const SendIcon: React.FC<{className?: string}> = ({ className }) => (
@@ -29,19 +28,17 @@ const CameraOnIcon = ({className = 'h-6 w-6'}: {className?: string}) => <svg xml
 const CameraOffIcon = ({className = 'h-6 w-6'}: {className?: string}) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3l18 18" /></svg>;
 
 
-const LiveChatWindow: React.FC<LiveChatWindowProps> = ({ userStream, chatMode, onSkip, onStop }) => {
+const LiveChatWindow: React.FC<LiveChatWindowProps> = ({ userStream, chatMode, onSkip, onStop, messages = [] }) => {
   const userVideoRef = useRef<HTMLVideoElement>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(chatMode === ChatMode.AUDIO);
   const [isStrangerSpeaking, setIsStrangerSpeaking] = useState(false);
   
-  const [messages, setMessages] = useState<Message[]>([]);
   const [isStrangerTyping, setIsStrangerTyping] = useState<boolean>(false);
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const strangerAudioQueue = useRef<Array<{buffer: AudioBuffer, startTime: number}>>([]);
-  const nextAudioStartTime = useRef(0);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -49,41 +46,14 @@ const LiveChatWindow: React.FC<LiveChatWindowProps> = ({ userStream, chatMode, o
 
   useEffect(scrollToBottom, [messages, isStrangerTyping]);
 
-  const handleSendMessage = useCallback(async () => {
+  const handleSendMessage = useCallback(() => {
     if (!inputValue.trim()) return;
 
     const text = inputValue.trim();
     setInputValue('');
 
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      text,
-      sender: MessageSender.USER,
-    };
-    setMessages((prev) => [...prev, userMessage]);
-    setIsStrangerTyping(true);
-
-    try {
-      const aiResponse = await sendMessageToAI(text);
-      setTimeout(() => {
-        const strangerMessage: Message = {
-          id: crypto.randomUUID(),
-          text: aiResponse,
-          sender: MessageSender.STRANGER,
-        };
-        setMessages((prev) => [...prev, strangerMessage]);
-        setIsStrangerTyping(false);
-      }, 500 + Math.random() * 800);
-    } catch (e) {
-       const errorText = e instanceof Error ? e.message : "An unknown error occurred.";
-       const errorMessage: Message = {
-        id: crypto.randomUUID(),
-        text: `Message failed to send: ${errorText}`,
-        sender: MessageSender.SYSTEM,
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-      setIsStrangerTyping(false);
-    }
+    // Send message to the connected partner
+    sendMessageToPartner(text);
   }, [inputValue]);
 
   const handleFormSubmit = (e: React.FormEvent) => {
@@ -91,109 +61,21 @@ const LiveChatWindow: React.FC<LiveChatWindowProps> = ({ userStream, chatMode, o
     handleSendMessage();
   };
 
-  const processAudioQueue = useCallback((outputAudioContext: AudioContext) => {
-    while(strangerAudioQueue.current.length > 0 && strangerAudioQueue.current[0].startTime < outputAudioContext.currentTime + 0.1) {
-        const { buffer, startTime } = strangerAudioQueue.current.shift()!;
-        const source = outputAudioContext.createBufferSource();
-        source.buffer = buffer;
-        source.connect(outputAudioContext.destination);
-        source.onended = () => {
-            if (strangerAudioQueue.current.length === 0) {
-                setIsStrangerSpeaking(false);
-            }
-        };
-        source.start(startTime);
-    }
-    requestAnimationFrame(() => processAudioQueue(outputAudioContext));
-  }, []);
-
   useEffect(() => {
-    setMessages([
-        {
-          id: crypto.randomUUID(),
-          text: "You're now connected. You can also chat with text here!",
-          sender: MessageSender.SYSTEM,
-        },
-      ]);
-      
-    const outputAudioContext = new window.AudioContext({ sampleRate: 24000 });
-    const inputAudioContext = new window.AudioContext({ sampleRate: 16000 });
-
+    // Set up user's local video stream
     if (userVideoRef.current) {
         userVideoRef.current.srcObject = userStream;
     }
-    
-    const mediaStreamSource = inputAudioContext.createMediaStreamSource(userStream);
-    const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
 
-    scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
-        const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
-        streamAudio(inputData);
-    };
-
-    mediaStreamSource.connect(scriptProcessor);
-    scriptProcessor.connect(inputAudioContext.destination);
-    
-    let frameInterval: number | undefined;
-    if (chatMode === ChatMode.VIDEO) {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        frameInterval = window.setInterval(() => {
-          if (!userVideoRef.current) return;
-          canvas.width = userVideoRef.current.videoWidth;
-          canvas.height = userVideoRef.current.videoHeight;
-          ctx.drawImage(userVideoRef.current, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob(async (blob) => {
-            if(blob) {
-              const base64Data = await blobToBase64(blob);
-              streamImage(base64Data);
-            }
-          }, 'image/jpeg', JPEG_QUALITY);
-        }, 1000 / FRAME_RATE);
-      }
-    }
-      
-    const onMessage = async (message: any) => {
-        const audioDataB64 = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
-        if (audioDataB64) {
-            setIsStrangerSpeaking(true);
-            const audioBytes = decode(audioDataB64);
-            const audioBuffer = await decodeAudioData(audioBytes, outputAudioContext, 24000, 1);
-            
-            const currentTime = outputAudioContext.currentTime;
-            const startTime = Math.max(currentTime, nextAudioStartTime.current);
-            
-            strangerAudioQueue.current.push({ buffer: audioBuffer, startTime });
-            nextAudioStartTime.current = startTime + audioBuffer.duration;
-        }
-        if (message.serverContent?.interrupted) {
-            strangerAudioQueue.current = [];
-            nextAudioStartTime.current = 0;
-            setIsStrangerSpeaking(false);
-        }
-    };
-
-    if ((window as any).geminiLiveSessionCallbacks) {
-        (window as any).geminiLiveSessionCallbacks.onMessage = onMessage;
-    }
-
-    const animationFrameId = requestAnimationFrame(() => processAudioQueue(outputAudioContext));
+    // Note: Audio and video communication happens through WebRTC
+    // The remote peer's media stream should be handled by the RTCPeerConnection
+    // in the services/geminiService.ts file and displayed via the remoteVideoRef
+    // (assuming the video element is added to display remote video)
 
     return () => {
-      mediaStreamSource.disconnect();
-      scriptProcessor.disconnect();
-      inputAudioContext.close();
-      outputAudioContext.close();
-      if (frameInterval) {
-        clearInterval(frameInterval);
-      }
-      cancelAnimationFrame(animationFrameId);
-      if ((window as any).geminiLiveSessionCallbacks) {
-        (window as any).geminiLiveSessionCallbacks.onMessage = undefined;
-      }
+      // Cleanup will be handled by RTCPeerConnection and parent component
     };
-  }, [userStream, chatMode, processAudioQueue]);
+  }, [userStream, chatMode]);
 
   const toggleMute = () => {
     setIsMuted(prev => {

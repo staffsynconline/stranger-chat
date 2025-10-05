@@ -273,6 +273,37 @@ io.on('connection', (socket) => {
     socket.emit('onlineCount', { count: totalUsers });
   });
 
+  // WebRTC signaling for P2P audio/video connections
+  socket.on('webrtc-signal', (data) => {
+    const { roomId, signal } = data;
+
+    if (activeRooms.has(roomId)) {
+      const room = activeRooms.get(roomId);
+
+      // Send signal to the other user in the room
+      if (room.user1.id === socket.id) {
+        room.user2.emit('webrtc-signal', { signal });
+      } else if (room.user2.id === socket.id) {
+        room.user1.emit('webrtc-signal', { signal });
+      }
+    }
+  });
+
+  socket.on('webrtc-ready', (data) => {
+    const { roomId } = data;
+
+    if (activeRooms.has(roomId)) {
+      const room = activeRooms.get(roomId);
+
+      // Notify the other user that this peer is ready
+      if (room.user1.id === socket.id) {
+        room.user2.emit('webrtc-ready');
+      } else if (room.user2.id === socket.id) {
+        room.user1.emit('webrtc-ready');
+      }
+    }
+  });
+
   // Keep track of online count updates
   socket.on('updateOnlineCount', () => {
     // Emit periodic online count updates (simplified)

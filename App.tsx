@@ -133,9 +133,19 @@ const App: React.FC = () => {
                 }
               });
             },
-            onMessage: (message: any) => {
-              console.log('Live session message:', message);
-            },
+                onMessage: (message: any) => {
+                  // Handle incoming messages from partner in live chat
+                  const strangerMessage: Message = {
+                    id: message.id,
+                    text: message.text || "Connected via audio/video!",
+                    sender: MessageSender.STRANGER,
+                  };
+
+                  // Add message to chat state if we have a messaging component
+                  if (window.location.hash !== '#') {
+                    setMessages(prev => [...prev, strangerMessage]);
+                  }
+                },
             onError: (e: Event) => {
               console.error("Live session error:", e);
               const errorMessage = "The connection was lost. Please try again.";
@@ -258,6 +268,7 @@ const App: React.FC = () => {
                 chatMode={chatMode!}
                 onSkip={handleSkip}
                 onStop={handleStop}
+                messages={messages}
              />
            )
         }
