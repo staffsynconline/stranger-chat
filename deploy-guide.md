@@ -39,11 +39,11 @@ This guide provides step-by-step instructions to deploy your React app built wit
 
 ## Step 4: Configure API Keys (Not Required)
 Your app now works completely without any external APIs:
-1. **Text Chat**: Fully functional with engaging mock responses
-2. **Audio Chat**: Simulated audio conversation experience
-3. **Video Chat**: Video connectivity with mock responses
+1. **Text Chat**: ✅ Fully functional with real user connections
+2. **Audio Chat**: ✅ Real stranger matching + media access + text chat
+3. **Video Chat**: ✅ Real stranger matching + camera access + text chat
 
-**Note**: The app has been modified to work as a complete demo without any external API dependencies. All chat modes are fully functional for demonstration purposes.
+**Note**: Audio/Video use text chat interface for reliable messaging while getting media permissions. WebRTC is configured for future expansion. All features work on any hosting platform!
 
 ## Step 5: Test Your Deployed Site
 1. Wait 5-10 minutes for DNS propagation (or immediately if using same IP)
