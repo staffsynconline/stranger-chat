@@ -1,0 +1,5 @@
+{
+  "name": "Stranger Chat",
+  "description": "A web application that mimics the experience of chatting with random strangers, powered by AI to create an engaging and anonymous conversation.",
+  "requestFramePermissions": ["camera", "microphone"]
+}
