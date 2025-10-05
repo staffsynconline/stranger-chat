@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChatMode, Message, MessageSender } from '../types';
-import { sendMessageToPartner } from '../services/geminiService';
+import { sendMessageToPartner, setRemoteStreamCallback } from '../services/geminiService';
 import StrangerVisualizer from './StrangerVisualizer';
 import MessageBubble from './MessageBubble';
 import ThemeToggleButton from './ThemeToggleButton';
@@ -33,12 +33,25 @@ const LiveChatWindow: React.FC<LiveChatWindowProps> = ({ userStream, chatMode, o
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(chatMode === ChatMode.AUDIO);
   const [isStrangerSpeaking, setIsStrangerSpeaking] = useState(false);
-  
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+
   const [isStrangerTyping, setIsStrangerTyping] = useState<boolean>(false);
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+
+  // Set up remote stream callback
+  useEffect(() => {
+    setRemoteStreamCallback((stream: MediaStream) => {
+      console.log('Received remote stream:', stream);
+      setRemoteStream(stream);
+    });
+
+    return () => {
+      setRemoteStreamCallback(() => {});
+    };
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -67,15 +80,18 @@ const LiveChatWindow: React.FC<LiveChatWindowProps> = ({ userStream, chatMode, o
         userVideoRef.current.srcObject = userStream;
     }
 
-    // Note: Audio and video communication happens through WebRTC
-    // The remote peer's media stream should be handled by the RTCPeerConnection
-    // in the services/geminiService.ts file and displayed via the remoteVideoRef
-    // (assuming the video element is added to display remote video)
-
     return () => {
       // Cleanup will be handled by RTCPeerConnection and parent component
     };
   }, [userStream, chatMode]);
+
+  useEffect(() => {
+    // Set up remote video stream when received
+    if (remoteVideoRef.current && remoteStream) {
+        remoteVideoRef.current.srcObject = remoteStream;
+        console.log('Remote video connected');
+    }
+  }, [remoteStream]);
 
   const toggleMute = () => {
     setIsMuted(prev => {
@@ -136,8 +152,19 @@ const LiveChatWindow: React.FC<LiveChatWindowProps> = ({ userStream, chatMode, o
   return (
     <div className="flex flex-col md:flex-row w-full max-w-6xl h-[95vh] sm:h-[90vh] mx-auto bg-surface-light dark:bg-surface-dark shadow-2xl rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700/50 animate-fade-in">
         <div className="flex-1 relative flex items-center justify-center bg-slate-100 dark:bg-slate-900 overflow-hidden">
-          <StrangerVisualizer isSpeaking={isStrangerSpeaking} />
-        
+          {/* Show remote video when available, otherwise show visualizer */}
+          {remoteStream && chatMode === ChatMode.VIDEO ? (
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              className="w-full h-full object-cover"
+              style={{ transform: 'scaleX(-1)' }} // Mirror the remote video
+            />
+          ) : (
+            <StrangerVisualizer isSpeaking={isStrangerSpeaking} />
+          )}
+
           <div className="absolute top-4 right-4 w-1/4 max-w-[200px] rounded-lg overflow-hidden shadow-lg border-2 border-surface-light dark:border-slate-700 aspect-[3/4]">
               <video
                   ref={userVideoRef}

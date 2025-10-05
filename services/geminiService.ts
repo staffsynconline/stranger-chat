@@ -5,6 +5,12 @@ let socket: Socket | null = null;
 let currentRoomId: string | null = null;
 let currentChatMode: string | null = null;
 let connectedUsersCount = 0;
+let remoteStreamCallback: ((stream: MediaStream) => void) | null = null;
+
+// Export function to set remote stream callback
+export const setRemoteStreamCallback = (callback: (stream: MediaStream) => void) => {
+  remoteStreamCallback = callback;
+};
 
 // Initialize socket connection
 function initSocket() {
@@ -168,8 +174,12 @@ export const startLiveSession = (callbacks: {
   };
 
   peerConnection.ontrack = (event) => {
-    console.log('Received remote track');
-    // Remote stream handling will be done in the video component
+    console.log('Received remote track:', event.track.kind);
+    const remoteStream = event.streams[0];
+    if (remoteStream && remoteStreamCallback) {
+      console.log('Passing remote stream to component');
+      remoteStreamCallback(remoteStream);
+    }
   };
 
   peerConnection.onconnectionstatechange = () => {
