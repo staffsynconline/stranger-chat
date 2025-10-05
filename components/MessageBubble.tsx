@@ -7,7 +7,7 @@ interface MessageBubbleProps {
 }
 
 const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isTyping = false }) => {
-  const { sender, text } = message;
+  const { sender, text, imageData, fileName } = message;
   const isUser = sender === MessageSender.USER;
   const isSystem = sender === MessageSender.SYSTEM;
 
@@ -30,12 +30,36 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isTyping = false
   return (
     <div className={`flex w-full my-1 animate-fade-in ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div className={`flex items-end gap-2 max-w-[85%] sm:max-w-[75%]`}>
-        <div className={`px-4 py-2 rounded-2xl shadow-md ${
-            isUser 
-              ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-br-none' 
+        <div className={`px-4 py-2 rounded-2xl shadow-md overflow-hidden ${
+            isUser
+              ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-br-none'
               : 'bg-slate-200 dark:bg-surface-dark text-slate-800 dark:text-slate-100 rounded-bl-none'
           }`}>
-          {isTyping ? typingIndicator() : <p className="text-base break-words">{text}</p>}
+          {isTyping ? typingIndicator() : (
+            <div className="space-y-2">
+              {/* Display image if present */}
+              {imageData && (
+                <div className="max-w-sm">
+                  <img
+                    src={imageData}
+                    alt={fileName || "Shared image"}
+                    className="rounded-lg max-w-full h-auto cursor-pointer hover:opacity-90 transition-opacity"
+                    onClick={() => window.open(imageData, '_blank')}
+                    style={{ maxHeight: '300px', objectFit: 'cover' }}
+                  />
+                  {fileName && (
+                    <p className="text-xs opacity-75 mt-1">{fileName}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Display text if present */}
+              {text && <p className="text-base break-words">{text}</p>}
+
+              {/* If no text and no image, show a placeholder */}
+              {!text && !imageData && <p className="text-base italic opacity-75">Sent an image</p>}
+            </div>
+          )}
         </div>
       </div>
     </div>

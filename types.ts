@@ -22,4 +22,6 @@ export interface Message {
   text: string;
   sender: MessageSender;
   type?: string; // For audio/video message types
+  imageData?: string; // Base64 encoded image data
+  fileName?: string; // Original filename
 }

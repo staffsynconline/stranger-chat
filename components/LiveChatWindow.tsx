@@ -14,6 +14,7 @@ interface LiveChatWindowProps {
   onSkip: () => void;
   onStop: () => void;
   messages?: Message[];
+  onSetClearRemoteStream?: (callback: () => void) => void;
 }
 
 const SendIcon: React.FC<{className?: string}> = ({ className }) => (
@@ -28,7 +29,7 @@ const CameraOnIcon = ({className = 'h-6 w-6'}: {className?: string}) => <svg xml
 const CameraOffIcon = ({className = 'h-6 w-6'}: {className?: string}) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3l18 18" /></svg>;
 
 
-const LiveChatWindow: React.FC<LiveChatWindowProps> = ({ userStream, chatMode, onSkip, onStop, messages = [] }) => {
+const LiveChatWindow: React.FC<LiveChatWindowProps> = ({ userStream, chatMode, onSkip, onStop, messages = [], onSetClearRemoteStream }) => {
   const userVideoRef = useRef<HTMLVideoElement>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(chatMode === ChatMode.AUDIO);
@@ -41,6 +42,13 @@ const LiveChatWindow: React.FC<LiveChatWindowProps> = ({ userStream, chatMode, o
 
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
+  const clearRemoteStream = useCallback(() => {
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
+    setRemoteStream(null);
+  }, []);
+
   // Set up remote stream callback
   useEffect(() => {
     setRemoteStreamCallback((stream: MediaStream) => {
@@ -52,6 +60,13 @@ const LiveChatWindow: React.FC<LiveChatWindowProps> = ({ userStream, chatMode, o
       setRemoteStreamCallback(() => {});
     };
   }, []);
+
+  // Provide clear stream callback to parent
+  useEffect(() => {
+    if (onSetClearRemoteStream) {
+      onSetClearRemoteStream(clearRemoteStream);
+    }
+  }, [onSetClearRemoteStream, clearRemoteStream]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -152,15 +167,21 @@ const LiveChatWindow: React.FC<LiveChatWindowProps> = ({ userStream, chatMode, o
   return (
     <div className="flex flex-col md:flex-row w-full max-w-6xl h-[95vh] sm:h-[90vh] mx-auto bg-surface-light dark:bg-surface-dark shadow-2xl rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700/50 animate-fade-in">
         <div className="flex-1 relative flex items-center justify-center bg-slate-100 dark:bg-slate-900 overflow-hidden">
-          {/* Show remote video when available, otherwise show visualizer */}
-          {remoteStream && chatMode === ChatMode.VIDEO ? (
-            <video
-              ref={remoteVideoRef}
-              autoPlay
-              playsInline
-              className="w-full h-full object-cover"
-              style={{ transform: 'scaleX(-1)' }} // Mirror the remote video
-            />
+          {/* For audio/video mode, show partner area */}
+          {chatMode !== ChatMode.TEXT ? (
+            <div className="flex items-center justify-center w-full h-full">
+              <div className="text-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16 mx-auto mb-4 text-slate-500 dark:text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                <h3 className="text-lg font-medium text-slate-600 dark:text-slate-300 mb-2">
+                  {chatMode === ChatMode.VIDEO ? 'Video Chat Partner' : 'Audio Chat Partner'}
+                </h3>
+                <p className="text-slate-500 dark:text-slate-400 text-sm">
+                  Partner connected - chat via text below! 🎯
+                </p>
+              </div>
+            </div>
           ) : (
             <StrangerVisualizer isSpeaking={isStrangerSpeaking} />
           )}

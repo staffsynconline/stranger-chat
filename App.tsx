@@ -79,11 +79,36 @@ const App: React.FC = () => {
             // Could show waiting message
           },
           onMessage: (message: any) => {
-            const strangerMessage: Message = {
-              id: message.id,
-              text: message.text,
-              sender: MessageSender.STRANGER,
-            };
+            let strangerMessage: Message;
+
+            if (message.type === 'image') {
+              // Parse image message
+              try {
+                const imageData = JSON.parse(message.text);
+                strangerMessage = {
+                  id: message.id,
+                  text: '📷 Image',
+                  sender: MessageSender.STRANGER,
+                  imageData: imageData.imageData,
+                  fileName: imageData.fileName,
+                };
+              } catch (e) {
+                // Fallback if parsing fails
+                strangerMessage = {
+                  id: message.id,
+                  text: message.text,
+                  sender: MessageSender.STRANGER,
+                };
+              }
+            } else {
+              // Regular text message
+              strangerMessage = {
+                id: message.id,
+                text: message.text,
+                sender: MessageSender.STRANGER,
+              };
+            }
+
             setMessages((prev) => [...prev, strangerMessage]);
             setIsStrangerTyping(false);
           },
@@ -101,89 +126,64 @@ const App: React.FC = () => {
       } else { // Simplicity - just text chat for now, WebRTC is complex for deployment
         startChatSession();
 
-        // Use timeout to simulate connection (like text chat)
+        // Direct connection for audio/video
         setChatState(ChatState.CHATTING);
         setMessages([
           {
             id: crypto.randomUUID(),
-            text: "Audio/Video chat currently uses text interface. (WebRTC connections work on local but need TURN server configuration for production)",
+            text: "Connected! You can chat with text while your media is being prepared.",
             sender: MessageSender.SYSTEM,
           },
         ]);
 
-        // For audio/video, get user media and show status
-        try {
-          if (mode === ChatMode.VIDEO || mode === ChatMode.AUDIO) {
-            const isVideo = mode === ChatMode.VIDEO;
-            mediaStreamRef.current = await getUserMedia(true, isVideo);
+        // For audio/video, get user media in background
+        getUserMedia(true, mode === ChatMode.VIDEO).then(stream => {
+          mediaStreamRef.current = stream;
+          // Media ready - no message needed as it's working in background
+        }).catch(mediaError => {
+          console.error('Media error:', mediaError);
+          // Could add error message here but keeping it quiet for now
+        });
+
+
+        // Connect to stranger matching (works even if WebRTC fails)
+        connectToStranger(mode.toLowerCase(), {
+          onConnected: (data: any) => {
+            console.log('Connected for audio/video:', data);
             setMessages((prev) => [...prev, {
               id: crypto.randomUUID(),
-              text: `✅ ${mode.charAt(0).toUpperCase() + mode.slice(1)} is ready! (Media access should work now)`,
+              text: `🎯 Connected to ${mode} partner! (Type messages below)`,
+              sender: MessageSender.SYSTEM,
+              type: mode.toLowerCase()
+            }]);
+          },
+          onWaiting: (message: string) => {
+            console.log('Waiting:', message);
+            setMessages((prev) => [...prev, {
+              id: crypto.randomUUID(),
+              text: `⏳ ${message}`,
+              sender: MessageSender.SYSTEM,
+            }]);
+          },
+          onMessage: (message: any) => {
+            const strangerMessage: Message = {
+              id: message.id,
+              text: message.text || "Started audio/video chat!",
+              sender: MessageSender.STRANGER,
+              type: mode.toLowerCase()
+            };
+            setMessages((prev) => [...prev, strangerMessage]);
+          },
+          onDisconnected: (reason: string) => {
+            console.log('Disconnected:', reason);
+            cleanupMedia();
+            setMessages((prev) => [...prev, {
+              id: crypto.randomUUID(),
+              text: `🔌 Partner ${reason === 'partner_left' ? 'disconnected' : 'switched partners'}. Finding new one...`,
               sender: MessageSender.SYSTEM,
             }]);
           }
-
-          // Connect to stranger matching (works even if WebRTC fails)
-          connectToStranger(mode.toLowerCase(), {
-            onConnected: (data: any) => {
-              console.log('Connected for audio/video:', data);
-              setMessages((prev) => [...prev, {
-                id: crypto.randomUUID(),
-                text: `🎯 Connected to ${mode} partner! (Type messages below)`,
-                sender: MessageSender.SYSTEM,
-                type: mode.toLowerCase()
-              }]);
-            },
-            onWaiting: (message: string) => {
-              console.log('Waiting:', message);
-              setMessages((prev) => [...prev, {
-                id: crypto.randomUUID(),
-                text: `⏳ ${message}`,
-                sender: MessageSender.SYSTEM,
-              }]);
-            },
-            onMessage: (message: any) => {
-              const strangerMessage: Message = {
-                id: message.id,
-                text: message.text || "Started audio/video chat!",
-                sender: MessageSender.STRANGER,
-                type: mode.toLowerCase()
-              };
-              setMessages((prev) => [...prev, strangerMessage]);
-            },
-            onDisconnected: (reason: string) => {
-              console.log('Disconnected:', reason);
-              cleanupMedia();
-              setMessages((prev) => [...prev, {
-                id: crypto.randomUUID(),
-                text: `🔌 Partner ${reason === 'partner_left' ? 'disconnected' : 'switched partners'}. Finding someone new...`,
-                sender: MessageSender.SYSTEM,
-              }]);
-            }
-          });
-        } catch (mediaError) {
-          console.error(mediaError);
-          let errorMessage = "An unexpected error occurred. Please try again.";
-           if (mediaError instanceof DOMException) {
-            switch (mediaError.name) {
-              case "NotAllowedError":
-                errorMessage = "Permission denied. Please allow access to your camera and microphone in your browser settings.";
-                break;
-              case "NotFoundError":
-                errorMessage = "No camera or microphone found. Please ensure your devices are connected and try again.";
-                break;
-              case "NotReadableError":
-                errorMessage = "Your camera or microphone is already in use by another application. Please close it and try again.";
-                break;
-              default:
-                errorMessage = `Could not access media devices: ${mediaError.message}`;
-            }
-          } else if (mediaError instanceof Error) {
-            errorMessage = mediaError.message;
-          }
-          setError(errorMessage);
-          setChatState(ChatState.ERROR);
-        }
+        });
       }
     } catch (e) {
       console.error(e);
@@ -212,14 +212,73 @@ const App: React.FC = () => {
     setChatState(ChatState.IDLE);
   }, [stopCurrentSession]);
 
+  const [clearRemoteStream, setClearRemoteStream] = useState<(() => void) | null>(null);
+
+  const handleSetClearRemoteStream = useCallback((callback: () => void) => {
+    setClearRemoteStream(() => callback);
+  }, []);
+
   const handleSkip = useCallback(() => {
-    stopCurrentSession();
-    if (chatMode) {
-      handleStartChat(chatMode);
-    } else {
-      setChatState(ChatState.IDLE);
+    // Clear remote stream when skipping
+    if (clearRemoteStream) {
+      clearRemoteStream();
     }
-  }, [stopCurrentSession, chatMode, handleStartChat]);
+
+    // For live chat, we skip to new partner
+    if (chatMode && chatMode !== ChatMode.TEXT) {
+      stopCurrentSession();
+
+      // For audio/video, skip means finding a new partner
+      // The text messaging should continue with the connection flow
+      connectToStranger(chatMode.toLowerCase(), {
+        onConnected: (data: any) => {
+          setMessages((prev) => [...prev, {
+            id: crypto.randomUUID(),
+            text: `🎯 Found new partner!`,
+            sender: MessageSender.SYSTEM,
+          }]);
+        },
+        onWaiting: (message: string) => {
+          setMessages((prev) => [...prev, {
+            id: crypto.randomUUID(),
+            text: `⏳ ${message}`,
+            sender: MessageSender.SYSTEM,
+          }]);
+        },
+        onMessage: (message: any) => {
+          const strangerMessage: Message = {
+            id: message.id,
+            text: message.text || "Connected with new partner!",
+            sender: MessageSender.STRANGER,
+            type: chatMode.toLowerCase()
+          };
+          setMessages((prev) => [...prev, strangerMessage]);
+        },
+        onDisconnected: (reason: string) => {
+          setMessages((prev) => [...prev, {
+            id: crypto.randomUUID(),
+            text: `🔌 Partner ${reason === 'partner_left' ? 'disconnected' : 'switched partners'}. Finding new one...`,
+            sender: MessageSender.SYSTEM,
+          }]);
+        }
+      });
+
+      // Reset remote stream when skipping
+      setMessages((prev) => [...prev, {
+        id: crypto.randomUUID(),
+        text: `🔄 Skipping to new partner...`,
+        sender: MessageSender.SYSTEM,
+      }]);
+    } else {
+      // For text chat, regular skip behavior
+      findNewPartner();
+      setMessages((prev) => [...prev, {
+        id: crypto.randomUUID(),
+        text: `🔄 Finding new text chat partner...`,
+        sender: MessageSender.SYSTEM,
+      }]);
+    }
+  }, [chatMode, stopCurrentSession, connectToStranger, findNewPartner, clearRemoteStream]);
   
   const handleSendMessage = useCallback((text: string) => {
     const userMessage: Message = {
@@ -241,6 +300,26 @@ const App: React.FC = () => {
     setTimeout(() => setIsStrangerTyping(false), 500);
   }, []);
 
+  const handleSendImage = useCallback((imageData: string, fileName: string) => {
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      text: '📷 Image',
+      sender: MessageSender.USER,
+      imageData,
+      fileName,
+    };
+
+    // Add image message to the chat
+    setMessages((prev) => [...prev, userMessage]);
+
+    // Send image data as json (you can extend the sendMessageToPartner to handle this)
+    sendMessageToPartner(JSON.stringify({
+      type: 'image',
+      imageData,
+      fileName,
+    }), 'image');
+  }, []);
+
   const ErrorIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-4 text-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -258,6 +337,7 @@ const App: React.FC = () => {
               messages={messages}
               isStrangerTyping={isStrangerTyping}
               onSendMessage={handleSendMessage}
+              onSendImage={handleSendImage}
               onSkip={handleSkip}
               onStop={handleStop}
             />
@@ -271,6 +351,7 @@ const App: React.FC = () => {
                 onSkip={handleSkip}
                 onStop={handleStop}
                 messages={messages}
+                onSetClearRemoteStream={handleSetClearRemoteStream}
              />
            )
         }

@@ -144,19 +144,30 @@ export const endChatSession = (): void => {
 let peerConnection: RTCPeerConnection | null = null;
 let localStream: MediaStream | null = null;
 
-// WebRTC configuration - enhanced for production
+// WebRTC configuration - enhanced for production with multiple free TURN servers
 const rtcConfig = {
   iceServers: [
+    // Free Google STUN servers (most reliable)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
-    // TURN servers for production firewalls
+    // Free TURN servers for firewall traversal
     {
-      urls: 'turn:numb.viagenie.ca',
+      urls: 'turn:numb.viagenie.ca:3478',
       credential: 'muazkh',
       username: 'webrtc@live.com'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
     }
   ],
   iceCandidatePoolSize: 10
